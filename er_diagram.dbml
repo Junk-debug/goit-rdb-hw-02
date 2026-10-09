@@ -1,0 +1,118 @@
+// ER-діаграма: MovieLens feature store (dbdiagram.io)
+
+// ═════════ 1. ИСХОДНЫЕ ДАННЫЕ ═════════
+
+Table hw2_users {
+  user_id     bigint [pk]
+  username    text   [not null]
+  signup_date date   [not null]
+}
+
+Table hw2_movies {
+  movie_id     bigint  [pk]
+  title        text    [not null]
+  release_year integer [not null]
+}
+
+Table hw2_genres {
+  genre_id integer [pk]
+  name     text    [not null, unique]
+}
+
+// Bridge N:M: movies <-> genres
+Table hw2_movie_genres {
+  movie_id bigint  [not null]
+  genre_id integer [not null]
+
+  indexes {
+    (movie_id, genre_id) [pk]
+  }
+}
+
+// Bridge N:M: users <-> movies
+Table hw2_ratings {
+  user_id  bigint       [not null]
+  movie_id bigint       [not null]
+  rating   numeric(2,1) [not null, note: 'CHECK rating BETWEEN 0.5 AND 5']
+  rated_at timestamptz  [not null]
+
+  indexes {
+    (user_id, movie_id) [pk]
+  }
+}
+
+// ═════════ 2. OFFLINE ═════════
+
+Table hw2_user_features_offline {
+  user_id       bigint       [not null]
+  valid_from    timestamptz  [not null]
+  valid_to      timestamptz  [note: 'NULL = current version. CHECK valid_to > valid_from']
+  avg_rating    numeric(3,2) [not null]
+  ratings_count integer      [not null, note: 'CHECK >= 0']
+  fav_genre_id  integer      [not null]
+
+  indexes {
+    (user_id, valid_from) [pk]
+  }
+}
+
+Table hw2_movie_features_offline {
+  movie_id            bigint       [not null]
+  valid_from          timestamptz  [not null]
+  valid_to            timestamptz  [note: 'NULL = current version. CHECK valid_to > valid_from']
+  movie_avg_rating    numeric(3,2) [not null]
+  movie_ratings_count integer      [not null, note: 'CHECK >= 0']
+
+  indexes {
+    (movie_id, valid_from) [pk]
+  }
+}
+
+// ═════════ 3. TRAINING ═════════
+
+Table hw2_training_events {
+  event_id          bigint      [pk, increment]
+  user_id           bigint      [not null]
+  movie_id          bigint      [not null]
+  prediction_ts     timestamptz [not null]
+  label_horizon_end timestamptz [not null, note: 'CHECK label_horizon_end > prediction_ts']
+  liked             boolean     [not null, note: 'rating >= 4']
+}
+
+// ═════════ 4. ONLINE ═════════
+
+Table hw2_user_features_online {
+  user_id       bigint       [pk]
+  avg_rating    numeric(3,2) [not null]
+  ratings_count integer      [not null]
+  fav_genre_id  integer      [not null]
+  feature_ts    timestamptz  [not null]
+  updated_at    timestamptz  [not null, default: `now()`]
+}
+
+Table hw2_movie_features_online {
+  movie_id            bigint       [pk]
+  movie_avg_rating    numeric(3,2) [not null]
+  movie_ratings_count integer      [not null]
+  feature_ts          timestamptz  [not null]
+  updated_at          timestamptz  [not null, default: `now()`]
+}
+
+// ═════════ RELATIONS (> many-to-one, - one-to-one) ═════════
+
+Ref: hw2_ratings.user_id  > hw2_users.user_id
+Ref: hw2_ratings.movie_id > hw2_movies.movie_id
+
+Ref: hw2_movie_genres.movie_id > hw2_movies.movie_id
+Ref: hw2_movie_genres.genre_id > hw2_genres.genre_id
+
+Ref: hw2_user_features_offline.user_id      > hw2_users.user_id
+Ref: hw2_user_features_offline.fav_genre_id > hw2_genres.genre_id
+Ref: hw2_movie_features_offline.movie_id    > hw2_movies.movie_id
+
+Ref: hw2_training_events.user_id  > hw2_users.user_id
+Ref: hw2_training_events.movie_id > hw2_movies.movie_id
+
+Ref: hw2_user_features_online.user_id      - hw2_users.user_id
+Ref: hw2_user_features_online.fav_genre_id > hw2_genres.genre_id
+Ref: hw2_movie_features_online.movie_id    - hw2_movies.movie_id
